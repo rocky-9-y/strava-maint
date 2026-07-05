@@ -12,9 +12,40 @@ from dotenv import load_dotenv
 load_dotenv()
 st.set_page_config(page_title="Strava メンテナンス管理", layout="wide", initial_sidebar_state="collapsed")
 
+# レスポンシブデザイン用CSSの注入 (PCとスマホで表示を切り替える魔法)
+st.markdown("""
+<style>
+/* スマホ幅 (768px以下) の設定 */
+@media (max-width: 768px) {
+    /* ヘッダー行をコンテナごと隠す */
+    div[data-testid="stHorizontalBlock"]:has(.desktop-header-item) {
+        display: none !important;
+    }
+    .desktop-header-item {
+        display: none !important;
+    }
+    /* スマホ用の項目ラベルを表示する */
+    .mobile-label {
+        display: inline-block !important;
+        width: 90px;
+        font-size: 0.9em;
+        color: #888;
+        font-weight: bold;
+    }
+}
+
+/* PC幅 (769px以上) の設定 */
+@media (min-width: 769px) {
+    /* スマホ用の項目ラベルを隠す */
+    .mobile-label {
+        display: none !important;
+    }
+}
+</style>
+""", unsafe_allow_html=True)
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# ローカル(.env)とクラウド(st.secrets)の両方に対応する関数
 def get_env(key):
     try:
         if key in st.secrets:
@@ -52,14 +83,12 @@ def init_gspread():
     gc = None
     try:
         if "GCP_SA_JSON" in st.secrets:
-            # Streamlit Cloud環境 (JSON文字列を辞書に変換して読み込む)
             creds_dict = json.loads(st.secrets["GCP_SA_JSON"])
             gc = gspread.service_account_from_dict(creds_dict)
-    except Exception:
-        pass
+    except Exception as e:
+        st.error(f"☁️ クラウド鍵の読み込みエラー: {e}")
         
     if gc is None:
-        # ローカル環境
         key_path = os.path.join(BASE_DIR, "service_account.json")
         gc = gspread.service_account(filename=key_path)
         
@@ -209,7 +238,8 @@ def edit_dialog(acc_id, part, app_data):
 # メインUI描画
 # ==========================================
 def main():
-    st.title("🚲 Strava メンテナンス管理")
+    # anchor=False で鎖マークを非表示
+    st.title("🚲 Strava メンテナンス管理", anchor=False)
     
     for acc in ACCOUNTS:
         migrate_local_data(acc)
@@ -224,33 +254,36 @@ def main():
                 data = load_maintenance_data(account, bike_id, bike_name, current_distance)
                 app_data = {"account": account, "current_distance": current_distance, "data": data}
                 
-                st.subheader(f"バイク: {bike_name} ｜ 現在のODO: {current_distance:.1f} km")
+                # anchor=False で鎖マークを非表示
+                st.subheader(f"バイク: {bike_name} ｜ 現在のODO: {current_distance:.1f} km", anchor=False)
                 st.divider()
                 
-                # ヘッダー行の追加
+                # PC用ヘッダー行 (スマホではCSSで非表示になる)
                 hcol1, hcol2, hcol3, hcol4, hcol5, hcol6, hcol7 = st.columns([2, 1.5, 1.5, 1.5, 1.5, 1.5, 2])
-                hcol1.write("**パーツ名**")
-                hcol2.write("**状態**")
-                hcol3.write("**使用距離**")
-                hcol4.write("**残り距離**")
-                hcol5.write("**メンテ周期**")
-                hcol6.write("**前回ODO**")
-                hcol7.write("**アクション**")
-                st.divider()
+                hcol1.markdown('<div class="desktop-header-item"><b>パーツ名</b></div>', unsafe_allow_html=True)
+                hcol2.markdown('<div class="desktop-header-item"><b>状態</b></div>', unsafe_allow_html=True)
+                hcol3.markdown('<div class="desktop-header-item"><b>使用距離</b></div>', unsafe_allow_html=True)
+                hcol4.markdown('<div class="desktop-header-item"><b>残り距離</b></div>', unsafe_allow_html=True)
+                hcol5.markdown('<div class="desktop-header-item"><b>メンテ周期</b></div>', unsafe_allow_html=True)
+                hcol6.markdown('<div class="desktop-header-item"><b>前回ODO</b></div>', unsafe_allow_html=True)
+                hcol7.markdown('<div class="desktop-header-item"><b>アクション</b></div>', unsafe_allow_html=True)
+                st.markdown('<div class="desktop-header-item"><hr style="margin-top: 0.5rem; margin-bottom: 1rem;"></div>', unsafe_allow_html=True)
                 
                 for part in PART_ORDER:
                     if part not in data["parts"]: continue
                     info = data["parts"][part]
                     
                     col1, col2, col3, col4, col5, col6, col7 = st.columns([2, 1.5, 1.5, 1.5, 1.5, 1.5, 2])
-                    col1.write(f"**{part}**")
+                    
+                    # スマホ用のラベル (PCではCSSで非表示になる)
+                    col1.markdown(f'<span class="mobile-label">パーツ名:</span> **{part}**', unsafe_allow_html=True)
                     
                     if not info["enabled"]:
-                        col2.write("⚪ 無効")
-                        col3.write("-")
-                        col4.write("-")
-                        col5.write(f"{info['current_interval']:.1f} km")
-                        col6.write(f"{info['last_maint_km']:.1f} km")
+                        col2.markdown('<span class="mobile-label">状態:</span> ⚪ 無効', unsafe_allow_html=True)
+                        col3.markdown('<span class="mobile-label">使用距離:</span> -', unsafe_allow_html=True)
+                        col4.markdown('<span class="mobile-label">残り距離:</span> -', unsafe_allow_html=True)
+                        col5.markdown(f'<span class="mobile-label">メンテ周期:</span> {info["current_interval"]:.1f} km', unsafe_allow_html=True)
+                        col6.markdown(f'<span class="mobile-label">前回ODO:</span> {info["last_maint_km"]:.1f} km', unsafe_allow_html=True)
                         with col7:
                             if st.button("有効化", key=f"en_{acc_id}_{part}", use_container_width=True):
                                 info["enabled"] = True
@@ -263,11 +296,11 @@ def main():
                         remain_km = info["current_interval"] - run_distance
                         status = "🔴 警告" if remain_km <= 0 else "🟡 注意" if remain_km <= 200 else "🟢 OK"
                         
-                        col2.write(status)
-                        col3.write(f"{run_distance:.1f} km")
-                        col4.write(f"{remain_km:.1f} km")
-                        col5.write(f"{info['current_interval']:.1f} km")
-                        col6.write(f"{info['last_maint_km']:.1f} km")
+                        col2.markdown(f'<span class="mobile-label">状態:</span> {status}', unsafe_allow_html=True)
+                        col3.markdown(f'<span class="mobile-label">使用距離:</span> {run_distance:.1f} km', unsafe_allow_html=True)
+                        col4.markdown(f'<span class="mobile-label">残り距離:</span> {remain_km:.1f} km', unsafe_allow_html=True)
+                        col5.markdown(f'<span class="mobile-label">メンテ周期:</span> {info["current_interval"]:.1f} km', unsafe_allow_html=True)
+                        col6.markdown(f'<span class="mobile-label">前回ODO:</span> {info["last_maint_km"]:.1f} km', unsafe_allow_html=True)
                         
                         with col7:
                             with st.popover("⚙️ 操作", use_container_width=True):
