@@ -51,9 +51,10 @@ PART_ORDER = ["タイヤ(F)", "タイヤ(R)", "ブレーキパッド(F)", "ブ�
 def init_gspread():
     gc = None
     try:
-        if "gcp_service_account" in st.secrets:
-            # Streamlit Cloud環境
-            gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
+        if "GCP_SA_JSON" in st.secrets:
+            # Streamlit Cloud環境 (JSON文字列を辞書に変換して読み込む)
+            creds_dict = json.loads(st.secrets["GCP_SA_JSON"])
+            gc = gspread.service_account_from_dict(creds_dict)
     except Exception:
         pass
         
