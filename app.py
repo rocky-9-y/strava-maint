@@ -3,6 +3,7 @@ import gspread
 import json
 import os
 import requests
+import base64
 from datetime import datetime
 from dotenv import load_dotenv
 
@@ -12,19 +13,23 @@ from dotenv import load_dotenv
 load_dotenv()
 st.set_page_config(page_title="Strava メンテナンス管理", layout="wide", initial_sidebar_state="collapsed")
 
-# レスポンシブデザイン用CSSの注入 (PCとスマホで表示を切り替える魔法)
+# レスポンシブデザイン用CSSの注入
 st.markdown("""
 <style>
+/* タブの文字サイズを少し大きく・太くする */
+button[data-baseweb="tab"] p {
+    font-size: 1.2rem !important;
+    font-weight: bold !important;
+}
+
 /* スマホ幅 (768px以下) の設定 */
 @media (max-width: 768px) {
-    /* ヘッダー行をコンテナごと隠す */
     div[data-testid="stHorizontalBlock"]:has(.desktop-header-item) {
         display: none !important;
     }
     .desktop-header-item {
         display: none !important;
     }
-    /* スマホ用の項目ラベルを表示する */
     .mobile-label {
         display: inline-block !important;
         width: 90px;
@@ -36,7 +41,6 @@ st.markdown("""
 
 /* PC幅 (769px以上) の設定 */
 @media (min-width: 769px) {
-    /* スマホ用の項目ラベルを隠す */
     .mobile-label {
         display: none !important;
     }
@@ -74,6 +78,13 @@ ACCOUNTS = [
 ]
 
 PART_ORDER = ["タイヤ(F)", "タイヤ(R)", "ブレーキパッド(F)", "ブレーキパッド(R)", "チェーン", "シフトワイヤー"]
+
+# ==========================================
+# 画像をHTMLで埋め込むための変換関数
+# ==========================================
+def get_image_base64(image_path):
+    with open(image_path, "rb") as img_file:
+        return base64.b64encode(img_file.read()).decode()
 
 # ==========================================
 # スプレッドシート連携 (クラウドDB)
@@ -238,7 +249,6 @@ def edit_dialog(acc_id, part, app_data):
 # メインUI描画
 # ==========================================
 def main():
-    # anchor=False で鎖マークを非表示
     st.title("🚲 Strava メンテナンス管理", anchor=False)
     
     for acc in ACCOUNTS:
@@ -254,11 +264,27 @@ def main():
                 data = load_maintenance_data(account, bike_id, bike_name, current_distance)
                 app_data = {"account": account, "current_distance": current_distance, "data": data}
                 
-                # anchor=False で鎖マークを非表示
-                st.subheader(f"バイク: {bike_name} ｜ 現在のODO: {current_distance:.1f} km", anchor=False)
+                # ==========================================
+                # 画像とタイトルを横並びで美しく表示
+                # ==========================================
+                img_path = os.path.join(BASE_DIR, f"{acc_id}.jpg")
+                if not os.path.exists(img_path):
+                    img_path = os.path.join(BASE_DIR, f"{acc_id}.png")
+                
+                if os.path.exists(img_path):
+                    img_b64 = get_image_base64(img_path)
+                    st.markdown(f"""
+                        <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 1rem;">
+                            <img src="data:image/jpeg;base64,{img_b64}" style="width: 60px; height: 60px; border-radius: 8px; object-fit: cover;">
+                            <h3 style="margin: 0; padding: 0;">バイク: {bike_name} ｜ 現在のODO: {current_distance:.1f} km</h3>
+                        </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    st.subheader(f"バイク: {bike_name} ｜ 現在のODO: {current_distance:.1f} km", anchor=False)
+                
                 st.divider()
                 
-                # PC用ヘッダー行 (スマホではCSSで非表示になる)
+                # PC用ヘッダー行
                 hcol1, hcol2, hcol3, hcol4, hcol5, hcol6, hcol7 = st.columns([2, 1.5, 1.5, 1.5, 1.5, 1.5, 2])
                 hcol1.markdown('<div class="desktop-header-item"><b>パーツ名</b></div>', unsafe_allow_html=True)
                 hcol2.markdown('<div class="desktop-header-item"><b>状態</b></div>', unsafe_allow_html=True)
@@ -275,7 +301,6 @@ def main():
                     
                     col1, col2, col3, col4, col5, col6, col7 = st.columns([2, 1.5, 1.5, 1.5, 1.5, 1.5, 2])
                     
-                    # スマホ用のラベル (PCではCSSで非表示になる)
                     col1.markdown(f'<span class="mobile-label">パーツ名:</span> **{part}**', unsafe_allow_html=True)
                     
                     if not info["enabled"]:
