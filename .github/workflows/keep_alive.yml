@@ -2,12 +2,13 @@ name: Keep App Awake
 
 on:
   schedule:
-    - cron: '0 */6 * * *' # 6時間ごとに自動実行 (1日4回)
-  workflow_dispatch: # 手動で実行したい時用のボタンを出す設定
+    - cron: '0 */4 * * *' # 4時間ごとに実行（完全にスリープを防ぎます）
+  workflow_dispatch:
 
 jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping Streamlit App
-        run: curl -I "https://strava-maint-kbeijkshzbc9bjh3denedf.streamlit.app/"
+      - name: Ping Streamlit App (GET Request)
+        # -sLにすることで、人間がブラウザで開いた時と同じアクセスを再現します
+        run: curl -sL "https://strava-maint-kbeijkshzbc9bjh3denedf.streamlit.app/" > /dev/null
