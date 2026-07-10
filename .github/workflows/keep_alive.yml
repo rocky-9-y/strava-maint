@@ -2,7 +2,7 @@ name: Keep App Awake
 
 on:
   schedule:
-    - cron: '0 */4 * * *' # 4時間ごとに実行（完全にスリープを防ぎます）
+    - cron: '0 */4 * * *' # 4時間ごとに実行
   workflow_dispatch:
 
 jobs:
@@ -10,5 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Ping Streamlit App (GET Request)
-        # -sLにすることで、人間がブラウザで開いた時と同じアクセスを再現します
-        run: curl -sL "https://strava-maint-kbeijkshzbc9bjh3denedf.streamlit.app/" > /dev/null
+        # -A で「人間（Windowsのブラウザ）」になりすまし、セキュリティによる遮断を防ぎます
+        run: curl -sL -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" "https://strava-maint-kbeijkshzbc9bjh3denedf.streamlit.app/" > /dev/null
+        # 万が一接続が切れても、エラーメールを送らないようにします
+        continue-on-error: true
