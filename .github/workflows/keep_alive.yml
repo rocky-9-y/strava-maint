@@ -9,8 +9,33 @@ jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping Streamlit App (GET Request)
-        # -A で「人間（Windowsのブラウザ）」になりすまし、セキュリティによる遮断を防ぎます
-        run: curl -sL -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" "https://strava-maint-kbeijkshzbc9bjh3denedf.streamlit.app/" > /dev/null
-        # 万が一接続が切れても、エラーメールを送らないようにします
-        continue-on-error: true
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          
+      - name: Install Selenium
+        run: pip install selenium
+        
+      - name: Open App with Real Browser
+        run: |
+          python -c "
+          from selenium import webdriver
+          from selenium.webdriver.chrome.options import Options
+          import time
+
+          options = Options()
+          options.add_argument('--headless=new')
+          options.add_argument('--no-sandbox')
+          options.add_argument('--disable-dev-shm-usage')
+
+          print('ブラウザを起動してアプリにアクセスします...')
+          driver = webdriver.Chrome(options=options)
+          driver.get('https://strava-maint-kbeijkshzbc9bjh3denedf.streamlit.app/')
+          
+          # 画面が完全に読み込まれ、通信が確立するまで10秒間待機
+          time.sleep(10)
+          
+          print('アクセス成功。ブラウザを終了します。')
+          driver.quit()
+          "
