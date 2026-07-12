@@ -2,7 +2,7 @@ name: Keep App Awake
 
 on:
   schedule:
-    - cron: '0 */4 * * *'
+    - cron: '0 */4 * * *' # 4時間ごとに自動巡回（スリープを永久防止）
   workflow_dispatch:
 
 jobs:
@@ -17,7 +17,7 @@ jobs:
       - name: Install Selenium
         run: pip install selenium
         
-      - name: Open App and Take Screenshot
+      - name: Keep App Awake
         run: |
           cat << 'EOF' > keep_alive.py
           from selenium import webdriver
@@ -38,33 +38,29 @@ jobs:
           driver = webdriver.Chrome(options=options)
           driver.get("https://strava-maint-kbeijkshzbc9bjh3denedf.streamlit.app/")
           
-          # 画面が落ち着くまで10秒待機
-          time.sleep(10)
-          
-          print(f"現在のURL: {driver.current_url}")
-          print(f"ページのタイトル: {driver.title}")
-          
-          # ★ロボットが見ている画面の写真を撮る
-          driver.save_screenshot("screenshot.png")
-          print("📸 スクリーンショットを保存しました。")
-
+          # 1. スリープ画面ならボタンを押す
           try:
-              wake_button = WebDriverWait(driver, 10).until(
+              wake_button = WebDriverWait(driver, 15).until(
                   EC.presence_of_element_located((By.CSS_SELECTOR, "button[data-testid^='wakeup-button']"))
               )
+              print("💤 スリープ画面を検知！ボタンを押してアプリを起こします...")
               driver.execute_script("arguments[0].click();", wake_button)
-              print("💤 ボタンをクリックしました。")
+              print("✅ ボタンを押しました。アプリの起動（15秒）を待ちます...")
+              time.sleep(15) # サーバーが完全に立ち上がるのを待つ
           except Exception:
-              print("✅ ボタンは見つかりませんでした。")
+              print("💡 アプリはすでに起きているか、ボタンはありません。")
 
+          # 2. メイン画面（自転車データ）が表示されるまで見届ける
+          try:
+              WebDriverWait(driver, 30).until(
+                  EC.presence_of_element_located((By.CSS_SELECTOR, "[data-testid='stAppViewContainer']"))
+              )
+              print("🚲 アプリの完全起動を確認しました！")
+              time.sleep(5)
+          except Exception as e:
+              print("⚠️ 起動確認タイムアウト:", e)
+          
+          print("🎉 すべての処理が正常に完了しました。")
           driver.quit()
           EOF
           python keep_alive.py
-
-      # 撮った写真をGitHubからダウンロードできるようにする設定
-      - name: Upload Screenshot
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: debug-screenshot
-          path: screenshot.png
