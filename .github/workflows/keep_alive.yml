@@ -32,20 +32,24 @@ jobs:
           options.add_argument('--no-sandbox')
           options.add_argument('--disable-dev-shm-usage')
           options.add_argument('--window-size=1920,1080')
+          # 人間のブラウザのフリをする（セキュリティ弾き防止）
+          options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
 
           print("ブラウザを起動してアプリにアクセスします...")
           driver = webdriver.Chrome(options=options)
           driver.get("https://strava-maint-kbeijkshzbc9bjh3denedf.streamlit.app/")
           
-          # 1. スリープ画面なら青いボタンを自動クリックする
+          # 1. スリープ画面ならボタンを自動クリックする（探し方を強化）
           try:
-              wake_button = WebDriverWait(driver, 10).until(
-                  EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'Yes, get this app back up!')]"))
+              # buttonタグやaタグに関わらず、テキストを含む要素を20秒間探す
+              wake_button = WebDriverWait(driver, 20).until(
+                  EC.element_to_be_clickable((By.XPATH, "//*[contains(text(), 'Yes, get this app back up')]"))
               )
               print("💤 スリープ画面を検知しました。ボタンをクリックして叩き起こします！")
               wake_button.click()
+              time.sleep(10) # クリック後、サーバーが起き上がるのを待つ
           except Exception:
-              print("✅ スリープ画面ではありません。通常のアクセスを継続します。")
+              print("✅ スリープ画面のボタンが見つかりませんでした。通常のアクセスを継続します。")
 
           # 2. アプリのメイン画面が完全に読み込まれるまで待機する
           try:
