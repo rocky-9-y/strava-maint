@@ -17,25 +17,47 @@ jobs:
       - name: Install Selenium
         run: pip install selenium
         
-      - name: Open App with Real Browser
+      - name: Open App and Click Wake Button
         run: |
-          python -c "
+          cat << 'EOF' > keep_alive.py
           from selenium import webdriver
           from selenium.webdriver.chrome.options import Options
+          from selenium.webdriver.common.by import By
+          from selenium.webdriver.support.ui import WebDriverWait
+          from selenium.webdriver.support import expected_conditions as EC
           import time
 
           options = Options()
           options.add_argument('--headless=new')
           options.add_argument('--no-sandbox')
           options.add_argument('--disable-dev-shm-usage')
+          options.add_argument('--window-size=1920,1080')
 
-          print('ブラウザを起動してアプリにアクセスします...')
+          print("ブラウザを起動してアプリにアクセスします...")
           driver = webdriver.Chrome(options=options)
-          driver.get('https://strava-maint-kbeijkshzbc9bjh3denedf.streamlit.app/')
+          driver.get("https://strava-maint-kbeijkshzbc9bjh3denedf.streamlit.app/")
           
-          # 画面が完全に読み込まれ、通信が確立するまで10秒間待機
-          time.sleep(10)
+          # 1. スリープ画面なら青いボタンを自動クリックする
+          try:
+              wake_button = WebDriverWait(driver, 10).until(
+                  EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'Yes, get this app back up!')]"))
+              )
+              print("💤 スリープ画面を検知しました。ボタンをクリックして叩き起こします！")
+              wake_button.click()
+          except Exception:
+              print("✅ スリープ画面ではありません。通常のアクセスを継続します。")
+
+          # 2. アプリのメイン画面が完全に読み込まれるまで待機する
+          try:
+              WebDriverWait(driver, 30).until(
+                  EC.presence_of_element_located((By.CSS_SELECTOR, "[data-testid='stAppViewContainer']"))
+              )
+              print("🚲 アプリのロード完了を確認しました。5秒間待機します...")
+              time.sleep(5)
+          except Exception as e:
+              print("⚠️ ロード確認タイムアウト（または別の画面）")
           
-          print('アクセス成功。ブラウザを終了します。')
+          print("🎉 アクセス成功。ブラウザを終了します。")
           driver.quit()
-          "
+          EOF
+          python keep_alive.py
