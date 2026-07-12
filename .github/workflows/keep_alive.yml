@@ -2,7 +2,7 @@ name: Keep App Awake
 
 on:
   schedule:
-    - cron: '0 */4 * * *' # 4時間ごとに実行
+    - cron: '0 */4 * * *'
   workflow_dispatch:
 
 jobs:
@@ -17,7 +17,7 @@ jobs:
       - name: Install Selenium
         run: pip install selenium
         
-      - name: Open App and Click Wake Button
+      - name: Open App and Take Screenshot
         run: |
           cat << 'EOF' > keep_alive.py
           from selenium import webdriver
@@ -38,32 +38,33 @@ jobs:
           driver = webdriver.Chrome(options=options)
           driver.get("https://strava-maint-kbeijkshzbc9bjh3denedf.streamlit.app/")
           
-          # 1. 提供いただいたHTMLの「data-testid」を使って確実にボタンを特定する
+          # 画面が落ち着くまで10秒待機
+          time.sleep(10)
+          
+          print(f"現在のURL: {driver.current_url}")
+          print(f"ページのタイトル: {driver.title}")
+          
+          # ★ロボットが見ている画面の写真を撮る
+          driver.save_screenshot("screenshot.png")
+          print("📸 スクリーンショットを保存しました。")
+
           try:
-              # 前方一致(^=)で、owner用でも一般用でも確実に見つける
-              wake_button = WebDriverWait(driver, 20).until(
+              wake_button = WebDriverWait(driver, 10).until(
                   EC.presence_of_element_located((By.CSS_SELECTOR, "button[data-testid^='wakeup-button']"))
               )
-              print("💤 スリープ画面を検知しました。ボタンを強制クリックして叩き起こします！")
-              
-              # 通常のクリックではなく、JavaScriptを使って確実に強制クリックする
               driver.execute_script("arguments[0].click();", wake_button)
-              
-              time.sleep(15) # クリック後、サーバーが起き上がるのを待つ
+              print("💤 ボタンをクリックしました。")
           except Exception:
-              print("✅ スリープ画面のボタンが見つかりませんでした。通常のアクセスを継続します。")
+              print("✅ ボタンは見つかりませんでした。")
 
-          # 2. アプリのメイン画面が完全に読み込まれるまで待機する
-          try:
-              WebDriverWait(driver, 30).until(
-                  EC.presence_of_element_located((By.CSS_SELECTOR, "[data-testid='stAppViewContainer']"))
-              )
-              print("🚲 アプリのロード完了を確認しました。5秒間待機します...")
-              time.sleep(5)
-          except Exception as e:
-              print("⚠️ ロード確認タイムアウト（または別の画面）")
-          
-          print("🎉 アクセス成功。ブラウザを終了します。")
           driver.quit()
           EOF
           python keep_alive.py
+
+      # 撮った写真をGitHubからダウンロードできるようにする設定
+      - name: Upload Screenshot
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: debug-screenshot
+          path: screenshot.png
