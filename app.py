@@ -13,16 +13,12 @@ from dotenv import load_dotenv
 load_dotenv()
 st.set_page_config(page_title="Strava メンテナンス管理", layout="wide", initial_sidebar_state="collapsed")
 
-# レスポンシブデザイン用CSSの注入
 st.markdown("""
 <style>
-/* タブの文字サイズを少し大きく・太くする */
 button[data-baseweb="tab"] p {
     font-size: 1.2rem !important;
     font-weight: bold !important;
 }
-
-/* スマホ幅 (768px以下) の設定 */
 @media (max-width: 768px) {
     div[data-testid="stHorizontalBlock"]:has(.desktop-header-item) {
         display: none !important;
@@ -38,8 +34,6 @@ button[data-baseweb="tab"] p {
         font-weight: bold;
     }
 }
-
-/* PC幅 (769px以上) の設定 */
 @media (min-width: 769px) {
     .mobile-label {
         display: none !important;
@@ -58,18 +52,17 @@ def get_env(key):
         pass
     return os.environ.get(key)
 
+# ★ target_bike_name を "tarmac" に変更しました
 ACCOUNTS = [
     {
         "id": "sl8",
-        "tab_name": "SL8",
         "athlete_id": get_env("INTERVALS_SL8_ATHLETE_ID"),
         "api_key": get_env("INTERVALS_SL8_API_KEY"),
-        "target_bike_name": "sl8",
+        "target_bike_name": "tarmac", 
         "data_file": os.path.join(BASE_DIR, "maintenance_data.json")
     },
     {
         "id": "merida",
-        "tab_name": "Merida",
         "athlete_id": get_env("INTERVALS_MERIDA_ATHLETE_ID"),
         "api_key": get_env("INTERVALS_MERIDA_API_KEY"),
         "target_bike_name": "merida",
@@ -79,16 +72,10 @@ ACCOUNTS = [
 
 PART_ORDER = ["タイヤ(F)", "タイヤ(R)", "ブレーキパッド(F)", "ブレーキパッド(R)", "チェーン", "シフトワイヤー"]
 
-# ==========================================
-# 画像をHTMLで埋め込むための変換関数
-# ==========================================
 def get_image_base64(image_path):
     with open(image_path, "rb") as img_file:
         return base64.b64encode(img_file.read()).decode()
 
-# ==========================================
-# スプレッドシート連携 (クラウドDB)
-# ==========================================
 @st.cache_resource
 def init_gspread():
     gc = None
@@ -164,9 +151,6 @@ def save_maintenance_data(account, data):
     else:
         worksheet.append_row([acc_id, json_str])
 
-# ==========================================
-# Intervals.icu API
-# ==========================================
 @st.cache_data(ttl=300)
 def get_bike_distance(athlete_id, api_key, target_bike_name, acc_id):
     if not athlete_id or not api_key:
@@ -183,9 +167,6 @@ def get_bike_distance(athlete_id, api_key, target_bike_name, acc_id):
         raise Exception("対象のバイクが見つかりません。")
     return target_bike["id"], target_bike["name"], target_bike.get("distance", 0) / 1000.0
 
-# ==========================================
-# ダイアログ (ポップアップUI)
-# ==========================================
 @st.dialog("🔧 メンテ実施の確認")
 def confirm_maintenance(acc_id, part, app_data):
     st.write(f"**【{part}】** のメンテを実施として記録しますか？")
@@ -245,107 +226,118 @@ def edit_dialog(acc_id, part, app_data):
             save_maintenance_data(app_data["account"], app_data["data"])
             st.rerun()
 
-# ==========================================
-# メインUI描画
-# ==========================================
 def main():
     st.title("🚲 Strava メンテナンス管理", anchor=False)
     
     for acc in ACCOUNTS:
         migrate_local_data(acc)
 
-    tabs = st.tabs([acc["tab_name"] for acc in ACCOUNTS])
+    # ★先にAPIからデータを取得して、タブ名を自動化する
+    fetched_data = []
+    for account in ACCOUNTS:
+        acc_id = account["id"]
+        try:
+            bike_id, bike_name, current_distance = get_bike_distance(account["athlete_id"], account["api_key"], account["target_bike_name"], acc_id)
+            data = load_maintenance_data(account, bike_id, bike_name, current_distance)
+            fetched_data.append({
+                "account": account,
+                "bike_name": bike_name, # これがタブ名になります
+                "current_distance": current_distance,
+                "data": data
+            })
+        except Exception as e:
+            st.error(f"エラーが発生しました ({acc_id}): {e}")
+
+    if not fetched_data:
+        return
+
+    # ★取得したバイク名をそのままタブ名にする
+    tabs = st.tabs([d["bike_name"] for d in fetched_data])
     
-    for i, account in enumerate(ACCOUNTS):
+    for i, app_data in enumerate(fetched_data):
         with tabs[i]:
+            account = app_data["account"]
             acc_id = account["id"]
-            try:
-                bike_id, bike_name, current_distance = get_bike_distance(account["athlete_id"], account["api_key"], account["target_bike_name"], acc_id)
-                data = load_maintenance_data(account, bike_id, bike_name, current_distance)
-                app_data = {"account": account, "current_distance": current_distance, "data": data}
+            bike_name = app_data["bike_name"]
+            current_distance = app_data["current_distance"]
+            data = app_data["data"]
+            
+            img_path = os.path.join(BASE_DIR, f"{acc_id}.jpg")
+            if not os.path.exists(img_path):
+                img_path = os.path.join(BASE_DIR, f"{acc_id}.png")
+            
+            if os.path.exists(img_path):
+                img_b64 = get_image_base64(img_path)
+                st.markdown(f"""
+                    <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 1rem;">
+                        <img src="data:image/jpeg;base64,{img_b64}" style="width: 60px; height: 60px; border-radius: 8px; object-fit: cover;">
+                        <h3 style="margin: 0; padding: 0;">バイク: {bike_name} ｜ 現在のODO: {current_distance:.1f} km</h3>
+                    </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.subheader(f"バイク: {bike_name} ｜ 現在のODO: {current_distance:.1f} km", anchor=False)
+            
+            st.divider()
+            
+            hcol1, hcol2, hcol3, hcol4, hcol5, hcol6, hcol7 = st.columns([2, 1.5, 1.5, 1.5, 1.5, 1.5, 2])
+            hcol1.markdown('<div class="desktop-header-item"><b>パーツ名</b></div>', unsafe_allow_html=True)
+            hcol2.markdown('<div class="desktop-header-item"><b>状態</b></div>', unsafe_allow_html=True)
+            hcol3.markdown('<div class="desktop-header-item"><b>使用距離</b></div>', unsafe_allow_html=True)
+            hcol4.markdown('<div class="desktop-header-item"><b>残り距離</b></div>', unsafe_allow_html=True)
+            hcol5.markdown('<div class="desktop-header-item"><b>メンテ周期</b></div>', unsafe_allow_html=True)
+            hcol6.markdown('<div class="desktop-header-item"><b>前回ODO</b></div>', unsafe_allow_html=True)
+            hcol7.markdown('<div class="desktop-header-item"><b>アクション</b></div>', unsafe_allow_html=True)
+            st.markdown('<div class="desktop-header-item"><hr style="margin-top: 0.5rem; margin-bottom: 1rem;"></div>', unsafe_allow_html=True)
+            
+            for part in PART_ORDER:
+                if part not in data["parts"]: continue
+                info = data["parts"][part]
                 
-                # ==========================================
-                # 画像とタイトルを横並びで美しく表示
-                # ==========================================
-                img_path = os.path.join(BASE_DIR, f"{acc_id}.jpg")
-                if not os.path.exists(img_path):
-                    img_path = os.path.join(BASE_DIR, f"{acc_id}.png")
+                col1, col2, col3, col4, col5, col6, col7 = st.columns([2, 1.5, 1.5, 1.5, 1.5, 1.5, 2])
                 
-                if os.path.exists(img_path):
-                    img_b64 = get_image_base64(img_path)
-                    st.markdown(f"""
-                        <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 1rem;">
-                            <img src="data:image/jpeg;base64,{img_b64}" style="width: 60px; height: 60px; border-radius: 8px; object-fit: cover;">
-                            <h3 style="margin: 0; padding: 0;">バイク: {bike_name} ｜ 現在のODO: {current_distance:.1f} km</h3>
-                        </div>
-                    """, unsafe_allow_html=True)
+                col1.markdown(f'<span class="mobile-label">パーツ名:</span> **{part}**', unsafe_allow_html=True)
+                
+                if not info["enabled"]:
+                    col2.markdown('<span class="mobile-label">状態:</span> ⚪ 無効', unsafe_allow_html=True)
+                    col3.markdown('<span class="mobile-label">使用距離:</span> -', unsafe_allow_html=True)
+                    col4.markdown('<span class="mobile-label">残り距離:</span> -', unsafe_allow_html=True)
+                    col5.markdown(f'<span class="mobile-label">メンテ周期:</span> {info["current_interval"]:.1f} km', unsafe_allow_html=True)
+                    col6.markdown(f'<span class="mobile-label">前回ODO:</span> {info["last_maint_km"]:.1f} km', unsafe_allow_html=True)
+                    with col7:
+                        if st.button("有効化", key=f"en_{acc_id}_{part}", use_container_width=True):
+                            info["enabled"] = True
+                            info["last_maint_km"] = current_distance
+                            info["current_interval"] = info["default_interval"]
+                            save_maintenance_data(account, data)
+                            st.rerun()
                 else:
-                    st.subheader(f"バイク: {bike_name} ｜ 現在のODO: {current_distance:.1f} km", anchor=False)
-                
-                st.divider()
-                
-                # PC用ヘッダー行
-                hcol1, hcol2, hcol3, hcol4, hcol5, hcol6, hcol7 = st.columns([2, 1.5, 1.5, 1.5, 1.5, 1.5, 2])
-                hcol1.markdown('<div class="desktop-header-item"><b>パーツ名</b></div>', unsafe_allow_html=True)
-                hcol2.markdown('<div class="desktop-header-item"><b>状態</b></div>', unsafe_allow_html=True)
-                hcol3.markdown('<div class="desktop-header-item"><b>使用距離</b></div>', unsafe_allow_html=True)
-                hcol4.markdown('<div class="desktop-header-item"><b>残り距離</b></div>', unsafe_allow_html=True)
-                hcol5.markdown('<div class="desktop-header-item"><b>メンテ周期</b></div>', unsafe_allow_html=True)
-                hcol6.markdown('<div class="desktop-header-item"><b>前回ODO</b></div>', unsafe_allow_html=True)
-                hcol7.markdown('<div class="desktop-header-item"><b>アクション</b></div>', unsafe_allow_html=True)
-                st.markdown('<div class="desktop-header-item"><hr style="margin-top: 0.5rem; margin-bottom: 1rem;"></div>', unsafe_allow_html=True)
-                
-                for part in PART_ORDER:
-                    if part not in data["parts"]: continue
-                    info = data["parts"][part]
+                    run_distance = current_distance - info["last_maint_km"]
+                    remain_km = info["current_interval"] - run_distance
+                    status = "🔴 警告" if remain_km <= 0 else "🟡 注意" if remain_km <= 200 else "🟢 OK"
                     
-                    col1, col2, col3, col4, col5, col6, col7 = st.columns([2, 1.5, 1.5, 1.5, 1.5, 1.5, 2])
+                    col2.markdown(f'<span class="mobile-label">状態:</span> {status}', unsafe_allow_html=True)
+                    col3.markdown(f'<span class="mobile-label">使用距離:</span> {run_distance:.1f} km', unsafe_allow_html=True)
+                    col4.markdown(f'<span class="mobile-label">残り距離:</span> {remain_km:.1f} km', unsafe_allow_html=True)
+                    col5.markdown(f'<span class="mobile-label">メンテ周期:</span> {info["current_interval"]:.1f} km', unsafe_allow_html=True)
+                    col6.markdown(f'<span class="mobile-label">前回ODO:</span> {info["last_maint_km"]:.1f} km', unsafe_allow_html=True)
                     
-                    col1.markdown(f'<span class="mobile-label">パーツ名:</span> **{part}**', unsafe_allow_html=True)
-                    
-                    if not info["enabled"]:
-                        col2.markdown('<span class="mobile-label">状態:</span> ⚪ 無効', unsafe_allow_html=True)
-                        col3.markdown('<span class="mobile-label">使用距離:</span> -', unsafe_allow_html=True)
-                        col4.markdown('<span class="mobile-label">残り距離:</span> -', unsafe_allow_html=True)
-                        col5.markdown(f'<span class="mobile-label">メンテ周期:</span> {info["current_interval"]:.1f} km', unsafe_allow_html=True)
-                        col6.markdown(f'<span class="mobile-label">前回ODO:</span> {info["last_maint_km"]:.1f} km', unsafe_allow_html=True)
-                        with col7:
-                            if st.button("有効化", key=f"en_{acc_id}_{part}", use_container_width=True):
-                                info["enabled"] = True
-                                info["last_maint_km"] = current_distance
-                                info["current_interval"] = info["default_interval"]
+                    with col7:
+                        with st.popover("⚙️ 操作", use_container_width=True):
+                            if st.button("🔧 メンテ実施", key=f"maint_{acc_id}_{part}", use_container_width=True):
+                                confirm_maintenance(acc_id, part, app_data)
+                            if st.button("➕ +500km延長", key=f"ext_{acc_id}_{part}", use_container_width=True):
+                                info["current_interval"] += 500
                                 save_maintenance_data(account, data)
                                 st.rerun()
-                    else:
-                        run_distance = current_distance - info["last_maint_km"]
-                        remain_km = info["current_interval"] - run_distance
-                        status = "🔴 警告" if remain_km <= 0 else "🟡 注意" if remain_km <= 200 else "🟢 OK"
-                        
-                        col2.markdown(f'<span class="mobile-label">状態:</span> {status}', unsafe_allow_html=True)
-                        col3.markdown(f'<span class="mobile-label">使用距離:</span> {run_distance:.1f} km', unsafe_allow_html=True)
-                        col4.markdown(f'<span class="mobile-label">残り距離:</span> {remain_km:.1f} km', unsafe_allow_html=True)
-                        col5.markdown(f'<span class="mobile-label">メンテ周期:</span> {info["current_interval"]:.1f} km', unsafe_allow_html=True)
-                        col6.markdown(f'<span class="mobile-label">前回ODO:</span> {info["last_maint_km"]:.1f} km', unsafe_allow_html=True)
-                        
-                        with col7:
-                            with st.popover("⚙️ 操作", use_container_width=True):
-                                if st.button("🔧 メンテ実施", key=f"maint_{acc_id}_{part}", use_container_width=True):
-                                    confirm_maintenance(acc_id, part, app_data)
-                                if st.button("➕ +500km延長", key=f"ext_{acc_id}_{part}", use_container_width=True):
-                                    info["current_interval"] += 500
-                                    save_maintenance_data(account, data)
-                                    st.rerun()
-                                if st.button("📜 履歴管理", key=f"hist_{acc_id}_{part}", use_container_width=True):
-                                    history_dialog(acc_id, part, app_data)
-                                if st.button("🛠️ 設定変更", key=f"set_{acc_id}_{part}", use_container_width=True):
-                                    edit_dialog(acc_id, part, app_data)
-                                if st.button("🚫 無効化", key=f"dis_{acc_id}_{part}", use_container_width=True):
-                                    info["enabled"] = False
-                                    save_maintenance_data(account, data)
-                                    st.rerun()
-                    st.divider()
-            except Exception as e:
-                st.error(f"エラーが発生しました: {e}")
+                            if st.button("📜 履歴管理", key=f"hist_{acc_id}_{part}", use_container_width=True):
+                                history_dialog(acc_id, part, app_data)
+                            if st.button("🛠️ 設定変更", key=f"set_{acc_id}_{part}", use_container_width=True):
+                                edit_dialog(acc_id, part, app_data)
+                            if st.button("🚫 無効化", key=f"dis_{acc_id}_{part}", use_container_width=True):
+                                info["enabled"] = False
+                                save_maintenance_data(account, data)
+                                st.rerun()
+                st.divider()
 
 if __name__ == "__main__":
     main()
